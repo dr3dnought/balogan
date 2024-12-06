@@ -1,0 +1,206 @@
+package balogan
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/dr3dnought/gospadi"
+)
+
+type Logger struct {
+	mutex sync.Mutex
+
+	level    LogLevel
+	writers  []LogWriter
+	prefixes []PrefixBuilderFunc
+}
+
+// Creates new Balogan Logger instance.
+//
+// If writers accept nil or empty array, the StdOutLogWriter will
+// be used as a default value.
+//
+// Balogan does not provide prefixes which will be used
+// as a default value.
+func New(level LogLevel, writers []LogWriter, prefixes ...PrefixBuilderFunc) *Logger {
+	return &Logger{
+		level: level,
+		writers: func() []LogWriter {
+			if writers == nil || len(writers) == 0 {
+				return []LogWriter{NewStdOutLogWriter()}
+			}
+
+			return writers
+		}(),
+		prefixes: prefixes,
+	}
+}
+
+// Creates new Balogan Logger instance ith previous conifg except prefixes.
+// Accept additional prefixes which will be added to the end of prefix part of log message.
+//
+// Provided prefixes DO NOT APPLY for Balogan Logger instance from which the method was called.
+func (l *Logger) WithTemporaryPrefix(builder ...PrefixBuilderFunc) *Logger {
+	prefixes := append(l.prefixes, builder...)
+
+	return &Logger{
+		level:    l.level,
+		writers:  l.writers,
+		prefixes: prefixes,
+	}
+}
+
+// Logf logs a formatted message at the specified level.
+// It checks if the log level is enabled, then writes the message with provided prefixes.
+//
+// Parameters:
+//
+//	level: The log level of the message.
+//	format: The format string for the message.
+//	args: The arguments for the format string.
+func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
+	if level < l.level {
+		return
+	}
+
+	message := fmt.Sprintf(format, args...)
+
+	l.write(fmt.Sprintf("%s %s", l.buildPrefixStr(), message))
+}
+
+// Log logs a message at the specified level.
+// It checks if the log level is enabled, then writes the message with provided prefixes.
+//
+// Parameters:
+//
+//	level: The log level of the message.
+//	args: The arguments to be converted to a string message.
+func (l *Logger) Log(level LogLevel, args ...interface{}) {
+	if level < l.level {
+		return
+	}
+
+	message := fmt.Sprint(args...)
+
+	l.write(fmt.Sprintf("%s %s", l.buildPrefixStr(), message))
+}
+
+// Debug logs a message at the DEBUG level.
+// It calls the general Log method with the DEBUG level.
+//
+// Parameters:
+//
+//	args: The arguments to be logged.
+func (l *Logger) Debug(args ...interface{}) {
+	l.Log(DebugLevel, args...)
+}
+
+// Debugf logs a formatted message at the DEBUG level.
+// It calls the general Logf method with the DEBUG level.
+//
+// Parameters:
+//
+//	format: The format string for the message.
+//	args: The arguments for the format string.
+func (l *Logger) Debugf(format string, args ...interface{}) {
+	l.Logf(DebugLevel, format, args...)
+}
+
+// Info logs a message at the INFO level.
+// It calls the general Log method with the INFO level.
+// Parameters:
+//
+//	args: The arguments to be logged.
+func (l *Logger) Info(args ...interface{}) {
+	l.Log(InfoLevel, args...)
+}
+
+// Infof logs a formatted message at the INFO level.
+// It calls the general Logf method with the INFO level.
+//
+// Parameters:
+//
+//	format: The format string for the message.
+//	args: The arguments for the format string.
+func (l *Logger) Infof(format string, args ...interface{}) {
+	l.Logf(InfoLevel, format, args...)
+}
+
+// Warning logs a message at the WARNING level.
+// It calls the general Log method with the WARNING level.
+//
+// Parameters:
+//
+//	args: The arguments to be logged.
+func (l *Logger) Warning(args ...interface{}) {
+	l.Log(WarningLevel, args...)
+}
+
+// Warningf logs a formatted message at the WARNING level.
+// It calls the general Logf method with the WARNING level.
+//
+// Parameters:
+//
+//	format: The format string for the message.
+//	args: The arguments for the format string.
+func (l *Logger) Warningf(format string, args ...interface{}) {
+	l.Logf(WarningLevel, format, args...)
+}
+
+// Error logs a message at the ERROR level.
+// It calls the general Log method with the ERROR level.
+//
+// Parameters:
+//
+//	args: The arguments to be logged.
+func (l *Logger) Error(args ...interface{}) {
+	l.Log(ErrorLevel, args...)
+}
+
+// Errorf logs a formatted message at the ERROR level.
+// It calls the general Logf method with the ERROR level.
+//
+// Parameters:
+//
+//	format: The format string for the message.
+//	args: The arguments for the format string.
+func (l *Logger) Errorf(format string, args ...interface{}) {
+	l.Logf(ErrorLevel, format, args...)
+}
+
+// Close closes all writers associated with the logger.
+// It ensures that all log messages are flushed and resources are released.
+//
+// If you use some Writer except StdOutLogWriter we highly recommend to call this method.
+//
+// Returns:
+//
+//	An error if any of the writers fail to close.
+func (l *Logger) Close() error {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	var err error
+	for _, writer := range l.writers {
+		if closeErr := writer.Close(); closeErr != nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
+func (l *Logger) buildPrefixStr() string {
+	return strings.Join(gospadi.Map(l.prefixes, func(f PrefixBuilderFunc) string {
+		return f()
+	}), " ")
+}
+
+func (l *Logger) write(message string) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	for _, writer := range l.writers {
+		writer.Write(message)
+	}
+}
