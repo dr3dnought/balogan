@@ -1,6 +1,7 @@
 package balogan
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -14,26 +15,46 @@ type Logger struct {
 	level    LogLevel
 	writers  []LogWriter
 	prefixes []PrefixBuilderFunc
+
+	concurrency bool
 }
 
-// Creates new Balogan Logger instance.
+// The simpliest way to create new Balogan Logger instance.
 //
-// If writers accept nil or empty array, the StdOutLogWriter will
+// If writers accept nil, the StdOutLogWriter will
 // be used as a default value.
 //
 // Balogan does not provide prefixes which will be used
 // as a default value.
-func New(level LogLevel, writers []LogWriter, prefixes ...PrefixBuilderFunc) *Logger {
+func New(level LogLevel, writer LogWriter, prefixes ...PrefixBuilderFunc) *Logger {
 	return &Logger{
 		level: level,
 		writers: func() []LogWriter {
-			if writers == nil || len(writers) == 0 {
+			if writer == nil {
 				return []LogWriter{NewStdOutLogWriter()}
 			}
 
-			return writers
+			return []LogWriter{writer}
 		}(),
 		prefixes: prefixes,
+	}
+}
+
+type BaloganConfig struct {
+	level    LogLevel
+	writers  []LogWriter
+	prefixes []PrefixBuilderFunc
+
+	concurrency bool
+}
+
+func NewFromConfig(cfg *BaloganConfig) *Logger {
+	return &Logger{
+		level:    cfg.level,
+		writers:  cfg.writers,
+		prefixes: cfg.prefixes,
+
+		concurrency: cfg.concurrency,
 	}
 }
 
@@ -181,13 +202,29 @@ func (l *Logger) Close() error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	var err error
-	for _, writer := range l.writers {
-		if closeErr := writer.Close(); closeErr != nil {
-			err = closeErr
+	var errs []error
+	if l.concurrency {
+		var wg sync.WaitGroup
+		for _, writer := range l.writers {
+			wg.Add(1)
+			go func(w LogWriter) {
+				defer wg.Done()
+				if err := w.Close(); err != nil {
+					errs = append(errs, err)
+				}
+			}(writer)
+		}
+
+		wg.Wait()
+	} else {
+		for _, writer := range l.writers {
+			if closeErr := writer.Close(); closeErr != nil {
+				errs = append(errs, closeErr)
+			}
 		}
 	}
-	return err
+
+	return errors.Join(errs...)
 }
 
 func (l *Logger) buildPrefixStr() string {
@@ -200,7 +237,20 @@ func (l *Logger) write(message string) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	for _, writer := range l.writers {
-		writer.Write(message)
+	if l.concurrency {
+		var wg sync.WaitGroup
+		for _, writer := range l.writers {
+			wg.Add(1)
+			go func(w LogWriter) {
+				defer wg.Done()
+				w.Write(message)
+			}(writer)
+		}
+
+		wg.Wait()
+	} else {
+		for _, writer := range l.writers {
+			writer.Write(message)
+		}
 	}
 }
