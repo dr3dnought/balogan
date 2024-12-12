@@ -9,12 +9,22 @@ import (
 	"github.com/dr3dnought/gospadi"
 )
 
+type ErrorHandler interface {
+	Handle(err error)
+}
+
+type DefaultErrorHandler struct{}
+
+func (h *DefaultErrorHandler) Handle(error) {}
+
 type Logger struct {
 	mutex sync.Mutex
 
 	level    LogLevel
 	writers  []LogWriter
 	prefixes []PrefixBuilderFunc
+
+	errorHandler ErrorHandler
 
 	concurrency bool
 }
@@ -36,25 +46,26 @@ func New(level LogLevel, writer LogWriter, prefixes ...PrefixBuilderFunc) *Logge
 
 			return []LogWriter{writer}
 		}()),
-		prefixes: prefixes,
+		prefixes:     prefixes,
+		errorHandler: &DefaultErrorHandler{},
 	}
 }
 
 type BaloganConfig struct {
-	level    LogLevel
-	writers  []LogWriter
-	prefixes []PrefixBuilderFunc
+	Level    LogLevel
+	Writers  []LogWriter
+	Prefixes []PrefixBuilderFunc
 
-	concurrency bool
+	Concurrency bool
 }
 
 func NewFromConfig(cfg *BaloganConfig) *Logger {
 	return &Logger{
-		level:    cfg.level,
-		writers:  cfg.writers,
-		prefixes: cfg.prefixes,
+		level:    cfg.Level,
+		writers:  cfg.Writers,
+		prefixes: cfg.Prefixes,
 
-		concurrency: cfg.concurrency,
+		concurrency: cfg.Concurrency,
 	}
 }
 
@@ -239,18 +250,34 @@ func (l *Logger) write(message string) {
 
 	if l.concurrency {
 		var wg sync.WaitGroup
+		var errsMu sync.Mutex
+		var errs []error
 		for _, writer := range l.writers {
 			wg.Add(1)
 			go func(w LogWriter) {
 				defer wg.Done()
-				w.Write(message)
+				if _, err := w.Write([]byte(message)); err != nil {
+					errsMu.Unlock()
+					errs = append(errs, err)
+					errsMu.Lock()
+				}
 			}(writer)
 		}
 
 		wg.Wait()
+		for _, err := range errs {
+			l.errorHandler.Handle(err)
+		}
 	} else {
+		var errs []error
 		for _, writer := range l.writers {
-			writer.Write(message)
+			_, err := writer.Write([]byte(message))
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+		for _, err := range errs {
+			l.errorHandler.Handle(err)
 		}
 	}
 }

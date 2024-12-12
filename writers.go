@@ -2,20 +2,23 @@ package balogan
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
 // LogWriter interface.
 // All Balogan writers have to implements this interface.
 type LogWriter interface {
-	Write(message string)
-	Close() error
+	io.Writer
+	io.Closer
 }
 
 type StdOutLogWriter struct{}
 
-func (w *StdOutLogWriter) Write(messages string) {
-	fmt.Println(messages)
+func (w *StdOutLogWriter) Write(bytes []byte) (int, error) {
+	fmt.Println(bytes)
+
+	return len(bytes), nil
 }
 
 func (w *StdOutLogWriter) Close() error {
@@ -40,16 +43,28 @@ func NewFileLogWriter(filename string) (*FileLogWriter, error) {
 	return &FileLogWriter{file: file}, nil
 }
 
-func (w *FileLogWriter) Write(message string) {
-	if w.file != nil {
-		_, _ = w.file.WriteString(message + "\n")
-		_ = w.file.Sync()
+func (w *FileLogWriter) Write(bytes []byte) (int, error) {
+	if w.file == nil {
+		return 0, os.ErrNotExist
 	}
+
+	count, err := w.file.Write(bytes)
+	if err != nil {
+		return 0, err
+	}
+
+	err = w.file.Sync()
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }
 
 func (w *FileLogWriter) Close() error {
-	if w.file != nil {
-		return w.file.Close()
+	if w.file == nil {
+		return os.ErrNotExist
 	}
-	return nil
+
+	return w.file.Close()
 }
