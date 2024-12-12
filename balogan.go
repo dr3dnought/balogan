@@ -29,13 +29,13 @@ type Logger struct {
 func New(level LogLevel, writer LogWriter, prefixes ...PrefixBuilderFunc) *Logger {
 	return &Logger{
 		level: level,
-		writers: func() []LogWriter {
+		writers: (func() []LogWriter {
 			if writer == nil {
 				return []LogWriter{NewStdOutLogWriter()}
 			}
 
 			return []LogWriter{writer}
-		}(),
+		}()),
 		prefixes: prefixes,
 	}
 }
@@ -227,9 +227,9 @@ func (l *Logger) Close() error {
 	return errors.Join(errs...)
 }
 
-func (l *Logger) buildPrefixStr() string {
+func (l *Logger) buildPrefixStr(args ...any) string {
 	return strings.Join(gospadi.Map(l.prefixes, func(f PrefixBuilderFunc) string {
-		return f()
+		return f(args)
 	}), " ")
 }
 
