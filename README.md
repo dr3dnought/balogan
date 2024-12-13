@@ -42,7 +42,7 @@ Every log function has `format` alternative. It works like `Sprintf` function in
 
 ### Using prefixes
 
-So, now out log message is not informative. Let's improve it.
+So, now our log message is not informative. Let's improve it.
 
 ```go
 package main
@@ -133,5 +133,34 @@ func main() {
 
 Like you can see, it's very extandable!
 
+## Integration `context.Context`
 
+balogan provides functions for putting logger and sub-logger in `context.Context`
+
+```go
+
+package main
+
+import (
+	"context"
+
+	"github.com/dr3dnought/balogan"
+)
+
+func main() {
+	logger := balogan.New(balogan.DebugLevel, balogan.DefaultWriter, balogan.WithLogLevel(balogan.DebugLevel))
+	logger.Debug("debug message") // Output: DEBUG debug message
+
+	ctx := context.Background()
+	ctx = logger.WithTemporaryPrefix(balogan.WithLogLevel(balogan.ErrorLevel)).WithContext(ctx)
+	logWithCtx(ctx) // Output: ERROR error message
+}
+
+func logWithCtx(ctx context.Context) {
+	logger, _ := balogan.FromContext(ctx)
+	logger.Error("error message") 
+}
+```
+
+That's way we put modificated logger into context and use it from context in `logWithCtx` func.
 
