@@ -9,6 +9,8 @@ import (
 	"github.com/dr3dnought/gospadi"
 )
 
+var DefaultWriter = NewStdOutLogWriter()
+
 type ErrorHandler interface {
 	Handle(err error)
 }

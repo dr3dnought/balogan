@@ -16,7 +16,7 @@ type LogWriter interface {
 type StdOutLogWriter struct{}
 
 func (w *StdOutLogWriter) Write(bytes []byte) (int, error) {
-	fmt.Println(bytes)
+	fmt.Println(string(bytes))
 
 	return len(bytes), nil
 }
