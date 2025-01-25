@@ -100,7 +100,7 @@ func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
 
 	message := fmt.Sprintf(format, args...)
 
-	l.write(fmt.Sprintf("%s %s", l.buildPrefixStr(), message))
+	l.write(fmt.Sprintf("%s %s %s", level, l.buildPrefixStr(), message))
 }
 
 // Log logs a message at the specified level.
@@ -115,7 +115,7 @@ func (l *Logger) Log(level LogLevel, args ...interface{}) {
 		return
 	}
 
-	l.write(fmt.Sprintf("%s %s", l.buildPrefixStr(), fmt.Sprint(args...)))
+	l.write(fmt.Sprintf("%s %s %s", level, l.buildPrefixStr(), fmt.Sprint(args...)))
 }
 
 // Debug logs a message at the DEBUG level.
