@@ -86,6 +86,7 @@ coverage.out
 /main
 /cmd/main/main
 /balogan
+/cmd*
 
 # Test output
 test-output/

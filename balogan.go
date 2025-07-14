@@ -94,7 +94,7 @@ func (l *Logger) WithTemporaryPrefix(builder ...PrefixBuilderFunc) *Logger {
 //	format: The format string for the message.
 //	args: The arguments for the format string.
 func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
-	if level < l.level {
+	if !level.IsEnabled(l.level) {
 		return
 	}
 
@@ -111,7 +111,7 @@ func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
 //	level: The log level of the message.
 //	args: The arguments to be converted to a string message.
 func (l *Logger) Log(level LogLevel, args ...interface{}) {
-	if level < l.level {
+	if !level.IsEnabled(l.level) {
 		return
 	}
 
@@ -199,6 +199,75 @@ func (l *Logger) Error(args ...interface{}) {
 //	args: The arguments for the format string.
 func (l *Logger) Errorf(format string, args ...interface{}) {
 	l.Logf(ErrorLevel, format, args...)
+}
+
+// Trace logs a message at the TRACE level.
+// It calls the general Log method with the TRACE level.
+//
+// Parameters:
+//
+//	args: The arguments to be logged.
+func (l *Logger) Trace(args ...interface{}) {
+	l.Log(TraceLevel, args...)
+}
+
+// Tracef logs a formatted message at the TRACE level.
+// It calls the general Logf method with the TRACE level.
+//
+// Parameters:
+//
+//	format: The format string for the message.
+//	args: The arguments for the format string.
+func (l *Logger) Tracef(format string, args ...interface{}) {
+	l.Logf(TraceLevel, format, args...)
+}
+
+// Fatal logs a message at the FATAL level and then exits the program.
+// It calls the general Log method with the FATAL level, then calls os.Exit(1).
+//
+// Parameters:
+//
+//	args: The arguments to be logged.
+func (l *Logger) Fatal(args ...interface{}) {
+	l.Log(FatalLevel, args...)
+	FatalLevel.Exit()
+}
+
+// Fatalf logs a formatted message at the FATAL level and then exits the program.
+// It calls the general Logf method with the FATAL level, then calls os.Exit(1).
+//
+// Parameters:
+//
+//	format: The format string for the message.
+//	args: The arguments for the format string.
+func (l *Logger) Fatalf(format string, args ...interface{}) {
+	l.Logf(FatalLevel, format, args...)
+	FatalLevel.Exit()
+}
+
+// Panic logs a message at the PANIC level and then panics.
+// It calls the general Log method with the PANIC level, then calls panic().
+//
+// Parameters:
+//
+//	args: The arguments to be logged.
+func (l *Logger) Panic(args ...interface{}) {
+	message := fmt.Sprint(args...)
+	l.Log(PanicLevel, args...)
+	PanicLevel.Panic(message)
+}
+
+// Panicf logs a formatted message at the PANIC level and then panics.
+// It calls the general Logf method with the PANIC level, then calls panic().
+//
+// Parameters:
+//
+//	format: The format string for the message.
+//	args: The arguments for the format string.
+func (l *Logger) Panicf(format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
+	l.Logf(PanicLevel, format, args...)
+	PanicLevel.Panic(message)
 }
 
 // Close closes all writers associated with the logger.
