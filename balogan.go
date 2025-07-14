@@ -70,6 +70,19 @@ type BaloganConfig struct {
 }
 
 func NewFromConfig(cfg *BaloganConfig) *Logger {
+	if cfg == nil {
+		// Возвращаем логгер с дефолтными настройками
+		return &Logger{
+			level:           InfoLevel,
+			writers:         []LogWriter{NewStdOutLogWriter()},
+			prefixes:        nil,
+			errorHandler:    &DefaultErrorHandler{},
+			concurrency:     false,
+			fields:          make(Fields),
+			fieldsFormatter: DefaultFieldsFormatter,
+		}
+	}
+
 	fields := cfg.Fields
 	if fields == nil {
 		fields = make(Fields)
@@ -139,7 +152,7 @@ func (l *Logger) Log(level LogLevel, args ...interface{}) {
 		return
 	}
 
-	message := fmt.Sprint(args...)
+	message := strings.TrimSpace(fmt.Sprint(args...))
 	fullMessage := l.buildMessage(level, message)
 	l.write(fullMessage)
 }
