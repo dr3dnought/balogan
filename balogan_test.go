@@ -2,6 +2,7 @@ package balogan
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -413,7 +414,8 @@ func TestLogger_LogAndLogf(t *testing.T) {
 
 	logger.Log(InfoLevel, "direct log", "message")
 	output := strings.TrimSpace(mockWriter.String())
-	if !strings.Contains(output, "direct log") {
+	fmt.Println(output)
+	if !strings.Contains(output, "direct log message") {
 		t.Errorf("Log output incorrect: %q", output)
 	}
 

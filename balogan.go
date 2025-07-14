@@ -152,7 +152,7 @@ func (l *Logger) Log(level LogLevel, args ...interface{}) {
 		return
 	}
 
-	message := strings.TrimSpace(fmt.Sprint(args...))
+	message := strings.TrimSpace(fmt.Sprintln(args...))
 	fullMessage := l.buildMessage(level, message)
 	l.write(fullMessage)
 }
