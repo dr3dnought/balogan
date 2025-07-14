@@ -63,11 +63,11 @@ type BaloganConfig struct {
 
 func NewFromConfig(cfg *BaloganConfig) *Logger {
 	return &Logger{
-		level:    cfg.Level,
-		writers:  cfg.Writers,
-		prefixes: cfg.Prefixes,
-
-		concurrency: cfg.Concurrency,
+		level:        cfg.Level,
+		writers:      cfg.Writers,
+		prefixes:     cfg.Prefixes,
+		errorHandler: &DefaultErrorHandler{},
+		concurrency:  cfg.Concurrency,
 	}
 }
 
@@ -257,9 +257,9 @@ func (l *Logger) write(message string) {
 			go func(w LogWriter) {
 				defer wg.Done()
 				if _, err := w.Write([]byte(message)); err != nil {
-					errsMu.Unlock()
-					errs = append(errs, err)
 					errsMu.Lock()
+					errs = append(errs, err)
+					errsMu.Unlock()
 				}
 			}(writer)
 		}
