@@ -2,6 +2,7 @@
 [![Release](https://img.shields.io/github/release/dr3dnought/balogan?style=flat-square)](https://github.com/dr3dnought/balogan/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/dr3dnought/balogan)](https://golang.org)
 [![Go Reference](https://pkg.go.dev/badge/github.com/dr3dnought/balogan.svg)](https://pkg.go.dev/github.com/dr3dnought/balogan)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/dr3dnought/balogan/branch/main/graph/badge.svg)](https://codecov.io/gh/dr3dnought/balogan)
 
 
