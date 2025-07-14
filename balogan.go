@@ -29,6 +29,10 @@ type Logger struct {
 	errorHandler ErrorHandler
 
 	concurrency bool
+
+	// Structured logging fields
+	fields          Fields
+	fieldsFormatter FieldsFormatter
 }
 
 // The simpliest way to create new Balogan Logger instance.
@@ -48,8 +52,10 @@ func New(level LogLevel, writer LogWriter, prefixes ...PrefixBuilderFunc) *Logge
 
 			return []LogWriter{writer}
 		}()),
-		prefixes:     prefixes,
-		errorHandler: &DefaultErrorHandler{},
+		prefixes:        prefixes,
+		errorHandler:    &DefaultErrorHandler{},
+		fields:          make(Fields),
+		fieldsFormatter: DefaultFieldsFormatter,
 	}
 }
 
@@ -59,15 +65,31 @@ type BaloganConfig struct {
 	Prefixes []PrefixBuilderFunc
 
 	Concurrency bool
+
+	// Structured logging configuration
+	Fields          Fields
+	FieldsFormatter FieldsFormatter
 }
 
 func NewFromConfig(cfg *BaloganConfig) *Logger {
+	fields := cfg.Fields
+	if fields == nil {
+		fields = make(Fields)
+	}
+
+	fieldsFormatter := cfg.FieldsFormatter
+	if fieldsFormatter == nil {
+		fieldsFormatter = DefaultFieldsFormatter
+	}
+
 	return &Logger{
-		level:        cfg.Level,
-		writers:      cfg.Writers,
-		prefixes:     cfg.Prefixes,
-		errorHandler: &DefaultErrorHandler{},
-		concurrency:  cfg.Concurrency,
+		level:           cfg.Level,
+		writers:         cfg.Writers,
+		prefixes:        cfg.Prefixes,
+		errorHandler:    &DefaultErrorHandler{},
+		concurrency:     cfg.Concurrency,
+		fields:          fields,
+		fieldsFormatter: fieldsFormatter,
 	}
 }
 
@@ -79,9 +101,13 @@ func (l *Logger) WithTemporaryPrefix(builder ...PrefixBuilderFunc) *Logger {
 	prefixes := append(l.prefixes, builder...)
 
 	return &Logger{
-		level:    l.level,
-		writers:  l.writers,
-		prefixes: prefixes,
+		level:           l.level,
+		writers:         l.writers,
+		prefixes:        prefixes,
+		errorHandler:    l.errorHandler,
+		concurrency:     l.concurrency,
+		fields:          l.fields.Copy(),
+		fieldsFormatter: l.fieldsFormatter,
 	}
 }
 
@@ -99,8 +125,8 @@ func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
 	}
 
 	message := fmt.Sprintf(format, args...)
-
-	l.write(fmt.Sprintf("%s %s %s", level, l.buildPrefixStr(), message))
+	fullMessage := l.buildMessage(level, message)
+	l.write(fullMessage)
 }
 
 // Log logs a message at the specified level.
@@ -115,7 +141,9 @@ func (l *Logger) Log(level LogLevel, args ...interface{}) {
 		return
 	}
 
-	l.write(fmt.Sprintf("%s %s %s", level, l.buildPrefixStr(), fmt.Sprint(args...)))
+	message := fmt.Sprint(args...)
+	fullMessage := l.buildMessage(level, message)
+	l.write(fullMessage)
 }
 
 // Debug logs a message at the DEBUG level.
@@ -307,10 +335,140 @@ func (l *Logger) Close() error {
 	return errors.Join(errs...)
 }
 
+// WithField returns a new Logger instance with the specified field added.
+// The new logger inherits all configuration from the current logger.
+//
+// Parameters:
+//
+//	key: The field key.
+//	value: The field value.
+func (l *Logger) WithField(key string, value interface{}) *Logger {
+	return &Logger{
+		level:           l.level,
+		writers:         l.writers,
+		prefixes:        l.prefixes,
+		errorHandler:    l.errorHandler,
+		concurrency:     l.concurrency,
+		fields:          l.fields.With(key, value),
+		fieldsFormatter: l.fieldsFormatter,
+	}
+}
+
+// WithFields returns a new Logger instance with the specified fields added.
+// The new logger inherits all configuration from the current logger.
+//
+// Parameters:
+//
+//	fields: A map of field key-value pairs to add.
+func (l *Logger) WithFields(fields Fields) *Logger {
+	return &Logger{
+		level:           l.level,
+		writers:         l.writers,
+		prefixes:        l.prefixes,
+		errorHandler:    l.errorHandler,
+		concurrency:     l.concurrency,
+		fields:          l.fields.WithFields(fields),
+		fieldsFormatter: l.fieldsFormatter,
+	}
+}
+
+// WithFieldsFormatter returns a new Logger instance with the specified fields formatter.
+// This allows changing how fields are formatted in log output.
+//
+// Parameters:
+//
+//	formatter: The FieldsFormatter to use for formatting fields.
+func (l *Logger) WithFieldsFormatter(formatter FieldsFormatter) *Logger {
+	return &Logger{
+		level:           l.level,
+		writers:         l.writers,
+		prefixes:        l.prefixes,
+		errorHandler:    l.errorHandler,
+		concurrency:     l.concurrency,
+		fields:          l.fields.Copy(),
+		fieldsFormatter: formatter,
+	}
+}
+
+// WithJSON returns a new Logger instance configured to format fields as JSON.
+// This is a convenient shortcut for WithFieldsFormatter(&JSONFormatter{}).
+//
+// Example:
+//
+//	logger.WithJSON().WithField("user", "john").Info("User logged in")
+//	// Output: INFO {"user":"john"} User logged in
+func (l *Logger) WithJSON() *Logger {
+	return l.WithFieldsFormatter(&JSONFormatter{})
+}
+
+// WithLogfmt returns a new Logger instance configured to format fields in logfmt style.
+// This is a convenient shortcut for WithFieldsFormatter(&LogfmtFormatter{}).
+//
+// Example:
+//
+//	logger.WithLogfmt().WithField("user", "john doe").Info("User logged in")
+//	// Output: INFO user="john doe" User logged in
+func (l *Logger) WithLogfmt() *Logger {
+	return l.WithFieldsFormatter(&LogfmtFormatter{})
+}
+
+// WithKeyValue returns a new Logger instance configured to format fields as key=value pairs.
+// This is a convenient shortcut for WithFieldsFormatter(&KeyValueFormatter{}).
+// This is the default format, so this method is mainly useful for explicitly switching back
+// from another format.
+//
+// Example:
+//
+//	logger.WithKeyValue().WithField("user", "john").Info("User logged in")
+//	// Output: INFO user=john User logged in
+func (l *Logger) WithKeyValue() *Logger {
+	return l.WithFieldsFormatter(&KeyValueFormatter{})
+}
+
+// WithKeyValueSeparator returns a new Logger instance configured to format fields
+// as key=value pairs with a custom separator between pairs.
+//
+// Parameters:
+//
+//	separator: The separator to use between key=value pairs.
+//
+// Example:
+//
+//	logger.WithKeyValueSeparator(" | ").WithFields(Fields{"a": 1, "b": 2}).Info("Test")
+//	// Output: INFO a=1 | b=2 Test
+func (l *Logger) WithKeyValueSeparator(separator string) *Logger {
+	return l.WithFieldsFormatter(&KeyValueFormatter{Separator: separator})
+}
+
+// GetFields returns a copy of the current fields.
+func (l *Logger) GetFields() Fields {
+	return l.fields.Copy()
+}
+
 func (l *Logger) buildPrefixStr(args ...any) string {
 	return strings.Join(gospadi.Map(l.prefixes, func(f PrefixBuilderFunc) string {
 		return f(args)
 	}), " ")
+}
+
+func (l *Logger) buildMessage(level LogLevel, message string) string {
+	parts := []string{level.String()}
+
+	prefixStr := l.buildPrefixStr()
+	if prefixStr != "" {
+		parts = append(parts, prefixStr)
+	}
+
+	if len(l.fields) > 0 {
+		fieldsStr := l.fieldsFormatter.Format(l.fields)
+		if fieldsStr != "" {
+			parts = append(parts, fieldsStr)
+		}
+	}
+
+	parts = append(parts, message)
+
+	return strings.Join(parts, " ")
 }
 
 func (l *Logger) write(message string) {
