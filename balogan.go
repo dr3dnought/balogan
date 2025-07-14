@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-
-	"github.com/dr3dnought/gospadi"
 )
 
 var DefaultWriter = NewStdOutLogWriter()
@@ -446,9 +444,11 @@ func (l *Logger) GetFields() Fields {
 }
 
 func (l *Logger) buildPrefixStr(args ...any) string {
-	return strings.Join(gospadi.Map(l.prefixes, func(f PrefixBuilderFunc) string {
-		return f(args)
-	}), " ")
+	var prefixes []string
+	for _, f := range l.prefixes {
+		prefixes = append(prefixes, f(args))
+	}
+	return strings.Join(prefixes, " ")
 }
 
 func (l *Logger) buildMessage(level LogLevel, message string) string {
