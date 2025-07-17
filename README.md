@@ -5,7 +5,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/dr3dnought/balogan/branch/main/graph/badge.svg)](https://codecov.io/gh/dr3dnought/balogan)
 
-
 The `balogan` package provides a **powerful yet simple** logger with extensive customization capabilities and modern structured logging support. Designed for developers who need **flexibility without complexity**.
 
 **Key Features:**
