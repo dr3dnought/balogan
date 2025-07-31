@@ -11,6 +11,7 @@ The `balogan` package provides a **powerful yet simple** logger with extensive c
 - 🚀 **Fast start** - works out of the box with zero configuration
 - 📊 **7 log levels** from TRACE to PANIC with proper filtering
 - 🏗️ **Structured logging** with fields (JSON, logfmt, key=value formats)
+- 🎯 **Conditional logging** - smart filtering with 20+ predefined conditions
 - 🔧 **Highly extensible** - custom prefixes, writers, and formatters
 - ⚡ **Concurrent logging** to multiple destinations
 - 🛡️ **Error handling** for robust logging operations
@@ -396,6 +397,187 @@ func main() {
 }
 ```
 
+## Conditional Logging
+
+balogan supports powerful conditional logging that allows you to control when log messages are written based on various criteria. This is useful for performance optimization, debugging, and environment-specific logging.
+
+### Basic Conditional Logging
+
+```go
+package main
+
+import "github.com/dr3dnought/balogan"
+
+func main() {
+    logger := balogan.New(balogan.InfoLevel, balogan.DefaultWriter)
+    
+    // Environment-based logging
+    logger.When(balogan.InDevelopment).Debug("This only logs in development")
+    logger.When(balogan.InProduction).Error("This only logs in production")
+    
+    // Debug mode logging
+    logger.When(balogan.DebugEnabled).Info("Debug mode is on")
+    
+    // Time-based logging
+    logger.When(balogan.WorkingHours).Info("Business hours only")
+    logger.When(balogan.Weekend).Debug("Weekend debugging")
+}
+```
+
+### Rate Limiting and Sampling
+
+```go
+// Rate limiting - prevent log spam
+rateLimitedLogger := logger.When(balogan.RateLimit(10)) // Max 10 logs per second
+for i := 0; i < 100; i++ {
+    rateLimitedLogger.Error("This won't spam your logs")
+}
+
+// Random sampling - log only a percentage
+sampledLogger := logger.When(balogan.RandomSample(10)) // Log 10% of messages
+for i := 0; i < 1000; i++ {
+    sampledLogger.Debug("Only ~100 of these will be logged")
+}
+
+// Deterministic sampling - every Nth message
+everyTenthLogger := logger.When(balogan.SampleEveryN(10)) // Every 10th message
+for i := 0; i < 100; i++ {
+    everyTenthLogger.Info("Message %d", i) // Logs messages 1, 11, 21, 31, etc.
+}
+
+// Count-based limiting - total limit
+limitedLogger := logger.When(balogan.CountBased(5)) // Only 5 messages total
+for i := 0; i < 20; i++ {
+    limitedLogger.Warning("Only first 5 will be logged")
+}
+```
+
+### Complex Conditions with Combinators
+
+```go
+// Combine multiple conditions with logical operators
+complexLogger := logger.When(balogan.And(
+    balogan.Or(balogan.InDevelopment, balogan.InTesting),
+    balogan.DebugEnabled,
+    balogan.Not(balogan.Weekend),
+))
+complexLogger.Debug("Logs only in dev/test, with debug enabled, on weekdays")
+
+// Alternative syntax using Any/All aliases
+smartLogger := logger.When(balogan.All(
+    balogan.Any(balogan.InDevelopment, balogan.InTesting),
+    balogan.DebugEnabled,
+    balogan.Weekday,
+))
+```
+
+### Custom Environment Conditions
+
+```go
+// Check specific environment variables
+logger.When(balogan.EnvEquals("LOG_LEVEL", "verbose")).Debug("Verbose logging")
+logger.When(balogan.EnvExists("FEATURE_FLAG")).Info("Feature is enabled")
+
+// Time-based conditions
+logger.When(balogan.TimeRange(9, 17)).Info("Business hours: 9 AM to 5 PM")
+logger.When(balogan.TimeRange(22, 6)).Error("Night shift: 10 PM to 6 AM")
+```
+
+### Field-Based Conditions
+
+```go
+// Log only when specific fields exist or have certain values
+userLogger := logger.WithLevelCondition(balogan.HasField("user_id"))
+userLogger.WithField("user_id", 123).Info("This will log")
+userLogger.Info("This won't log - no user_id field")
+
+// Log only for specific field values
+prodLogger := logger.WithLevelCondition(balogan.FieldEquals("environment", "production"))
+prodLogger.WithField("environment", "production").Error("Production error")
+prodLogger.WithField("environment", "development").Error("Won't log - not production")
+```
+
+### Context-Aware Conditions
+
+```go
+import "context"
+
+// Define custom context key type (recommended)
+type userRoleKey string
+const UserRole userRoleKey = "user_role"
+
+// Create context-aware logger
+adminLogger := logger.WithContextCondition(balogan.ContextValueEquals(UserRole, "admin"))
+
+// Use with context
+ctx := context.WithValue(context.Background(), UserRole, "admin")
+adminLogger.WithContext(ctx).Info("Admin action") // This will log
+
+ctx = context.WithValue(context.Background(), UserRole, "user")
+adminLogger.WithContext(ctx).Info("User action") // This won't log
+```
+
+### Predefined Conditions Reference
+
+**Environment Conditions:**
+- `InProduction` - ENV=production
+- `InDevelopment` - ENV=development  
+- `InTesting` - ENV=test
+- `InStaging` - ENV=staging
+
+**Debug Conditions:**
+- `DebugEnabled` - DEBUG=true
+- `VerboseMode` - VERBOSE=true
+
+**Time Conditions:**
+- `WorkingHours` - 9 AM to 5 PM
+- `Weekend` - Saturday and Sunday
+- `Weekday` - Monday to Friday
+
+**Utility Conditions:**
+- `Always()` - Always log
+- `Never()` - Never log
+- `EnvEquals(key, value)` - Environment variable equals value
+- `EnvExists(key)` - Environment variable exists
+- `TimeRange(start, end)` - Hour range (supports overnight)
+
+**Sampling Conditions:**
+- `RandomSample(percentage)` - Random sampling (0-100%)
+- `SampleEveryN(n)` - Every Nth message
+- `CountBased(max)` - Maximum total count
+- `RateLimit(perSecond)` - Rate limiting
+
+**Field Conditions:**
+- `OnlyLevel(level)` - Specific log level only
+- `MinLevel(level)` - Minimum log level
+- `HasField(name)` - Field exists
+- `FieldEquals(name, value)` - Field equals value
+
+**Context Conditions:**
+- `HasContextValue(key)` - Context key exists
+- `ContextValueEquals(key, value)` - Context value equals
+
+**Combinators:**
+- `And(conditions...)` - All conditions must be true
+- `Or(conditions...)` - Any condition must be true
+- `Not(condition)` - Invert condition
+- `Any(conditions...)` - Alias for Or
+- `All(conditions...)` - Alias for And
+
+### Performance Considerations
+
+Conditional logging is designed to be fast:
+
+```go
+// Condition evaluation benchmarks:
+// Always():         0.32 ns/op
+// RandomSample():   39.61 ns/op  
+// RateLimit():      56.83 ns/op
+// Complex combination: 42.89 ns/op
+```
+
+All conditions are thread-safe and can be used safely across multiple goroutines.
+
 ### Using prefixes
 
 So, now our log message is not informative. Let's improve it.
@@ -740,6 +922,47 @@ balogan.WithLogLevel(level)       // Log level in output
 func WithCustom() balogan.PrefixBuilderFunc {
     return func(args ...any) string { return "custom" }
 }
+```
+
+### Conditional Logging
+```go
+// Basic conditions
+logger.When(condition)                 // Apply condition
+logger.WithLevelCondition(condition)   // Level-based condition
+logger.WithContextCondition(condition) // Context-based condition
+
+// Predefined conditions
+balogan.InProduction                   // Environment conditions
+balogan.InDevelopment
+balogan.DebugEnabled                   // Debug conditions
+balogan.VerboseMode
+balogan.WorkingHours                   // Time conditions
+balogan.Weekend
+balogan.Weekday
+
+// Condition builders
+balogan.Always()                       // Always true
+balogan.Never()                        // Always false
+balogan.EnvEquals(key, value)          // Environment variable
+balogan.EnvExists(key)
+balogan.RandomSample(percentage)       // Sampling
+balogan.SampleEveryN(n)
+balogan.CountBased(max)                // Limiting
+balogan.RateLimit(perSecond)
+balogan.TimeRange(start, end)          // Time range
+balogan.HasField(name)                 // Field conditions
+balogan.FieldEquals(name, value)
+balogan.HasContextValue(key)           // Context conditions
+balogan.ContextValueEquals(key, value)
+balogan.OnlyLevel(level)               // Level conditions
+balogan.MinLevel(level)
+
+// Combinators
+balogan.And(conditions...)             // Logical AND
+balogan.Or(conditions...)              // Logical OR
+balogan.Not(condition)                 // Logical NOT
+balogan.Any(conditions...)             // Alias for Or
+balogan.All(conditions...)             // Alias for And
 ```
 
 ### Temporary Extensions
