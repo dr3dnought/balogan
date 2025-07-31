@@ -89,5 +89,4 @@ coverage.out
 /cmd*
 
 # Test output
-test-output/
 test-results/ 
