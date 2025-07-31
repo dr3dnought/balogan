@@ -1,6 +1,7 @@
 package balogan
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +32,11 @@ type Logger struct {
 	// Structured logging fields
 	fields          Fields
 	fieldsFormatter FieldsFormatter
+
+	// Conditional logging
+	conditions        []Condition
+	levelConditions   []LevelCondition
+	contextConditions []ContextCondition
 }
 
 // The simpliest way to create new Balogan Logger instance.
@@ -50,10 +56,13 @@ func New(level LogLevel, writer LogWriter, prefixes ...PrefixBuilderFunc) *Logge
 
 			return []LogWriter{writer}
 		}()),
-		prefixes:        prefixes,
-		errorHandler:    &DefaultErrorHandler{},
-		fields:          make(Fields),
-		fieldsFormatter: DefaultFieldsFormatter,
+		prefixes:          prefixes,
+		errorHandler:      &DefaultErrorHandler{},
+		fields:            make(Fields),
+		fieldsFormatter:   DefaultFieldsFormatter,
+		conditions:        []Condition{},
+		levelConditions:   []LevelCondition{},
+		contextConditions: []ContextCondition{},
 	}
 }
 
@@ -73,13 +82,16 @@ func NewFromConfig(cfg *BaloganConfig) *Logger {
 	if cfg == nil {
 		// Возвращаем логгер с дефолтными настройками
 		return &Logger{
-			level:           InfoLevel,
-			writers:         []LogWriter{NewStdOutLogWriter()},
-			prefixes:        nil,
-			errorHandler:    &DefaultErrorHandler{},
-			concurrency:     false,
-			fields:          make(Fields),
-			fieldsFormatter: DefaultFieldsFormatter,
+			level:             InfoLevel,
+			writers:           []LogWriter{NewStdOutLogWriter()},
+			prefixes:          nil,
+			errorHandler:      &DefaultErrorHandler{},
+			concurrency:       false,
+			fields:            make(Fields),
+			fieldsFormatter:   DefaultFieldsFormatter,
+			conditions:        []Condition{},
+			levelConditions:   []LevelCondition{},
+			contextConditions: []ContextCondition{},
 		}
 	}
 
@@ -94,13 +106,16 @@ func NewFromConfig(cfg *BaloganConfig) *Logger {
 	}
 
 	return &Logger{
-		level:           cfg.Level,
-		writers:         cfg.Writers,
-		prefixes:        cfg.Prefixes,
-		errorHandler:    &DefaultErrorHandler{},
-		concurrency:     cfg.Concurrency,
-		fields:          fields,
-		fieldsFormatter: fieldsFormatter,
+		level:             cfg.Level,
+		writers:           cfg.Writers,
+		prefixes:          cfg.Prefixes,
+		errorHandler:      &DefaultErrorHandler{},
+		concurrency:       cfg.Concurrency,
+		fields:            fields,
+		fieldsFormatter:   fieldsFormatter,
+		conditions:        []Condition{},
+		levelConditions:   []LevelCondition{},
+		contextConditions: []ContextCondition{},
 	}
 }
 
@@ -112,13 +127,16 @@ func (l *Logger) WithTemporaryPrefix(builder ...PrefixBuilderFunc) *Logger {
 	prefixes := append(l.prefixes, builder...)
 
 	return &Logger{
-		level:           l.level,
-		writers:         l.writers,
-		prefixes:        prefixes,
-		errorHandler:    l.errorHandler,
-		concurrency:     l.concurrency,
-		fields:          l.fields.Copy(),
-		fieldsFormatter: l.fieldsFormatter,
+		level:             l.level,
+		writers:           l.writers,
+		prefixes:          prefixes,
+		errorHandler:      l.errorHandler,
+		concurrency:       l.concurrency,
+		fields:            l.fields.Copy(),
+		fieldsFormatter:   l.fieldsFormatter,
+		conditions:        l.conditions,
+		levelConditions:   l.levelConditions,
+		contextConditions: l.contextConditions,
 	}
 }
 
@@ -131,7 +149,7 @@ func (l *Logger) WithTemporaryPrefix(builder ...PrefixBuilderFunc) *Logger {
 //	format: The format string for the message.
 //	args: The arguments for the format string.
 func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
-	if !level.IsEnabled(l.level) {
+	if !l.shouldLog(level) {
 		return
 	}
 
@@ -148,7 +166,7 @@ func (l *Logger) Logf(level LogLevel, format string, args ...interface{}) {
 //	level: The log level of the message.
 //	args: The arguments to be converted to a string message.
 func (l *Logger) Log(level LogLevel, args ...interface{}) {
-	if !level.IsEnabled(l.level) {
+	if !l.shouldLog(level) {
 		return
 	}
 
@@ -355,13 +373,16 @@ func (l *Logger) Close() error {
 //	value: The field value.
 func (l *Logger) WithField(key string, value interface{}) *Logger {
 	return &Logger{
-		level:           l.level,
-		writers:         l.writers,
-		prefixes:        l.prefixes,
-		errorHandler:    l.errorHandler,
-		concurrency:     l.concurrency,
-		fields:          l.fields.With(key, value),
-		fieldsFormatter: l.fieldsFormatter,
+		level:             l.level,
+		writers:           l.writers,
+		prefixes:          l.prefixes,
+		errorHandler:      l.errorHandler,
+		concurrency:       l.concurrency,
+		fields:            l.fields.With(key, value),
+		fieldsFormatter:   l.fieldsFormatter,
+		conditions:        l.conditions,
+		levelConditions:   l.levelConditions,
+		contextConditions: l.contextConditions,
 	}
 }
 
@@ -373,13 +394,16 @@ func (l *Logger) WithField(key string, value interface{}) *Logger {
 //	fields: A map of field key-value pairs to add.
 func (l *Logger) WithFields(fields Fields) *Logger {
 	return &Logger{
-		level:           l.level,
-		writers:         l.writers,
-		prefixes:        l.prefixes,
-		errorHandler:    l.errorHandler,
-		concurrency:     l.concurrency,
-		fields:          l.fields.WithFields(fields),
-		fieldsFormatter: l.fieldsFormatter,
+		level:             l.level,
+		writers:           l.writers,
+		prefixes:          l.prefixes,
+		errorHandler:      l.errorHandler,
+		concurrency:       l.concurrency,
+		fields:            l.fields.WithFields(fields),
+		fieldsFormatter:   l.fieldsFormatter,
+		conditions:        l.conditions,
+		levelConditions:   l.levelConditions,
+		contextConditions: l.contextConditions,
 	}
 }
 
@@ -391,13 +415,16 @@ func (l *Logger) WithFields(fields Fields) *Logger {
 //	formatter: The FieldsFormatter to use for formatting fields.
 func (l *Logger) WithFieldsFormatter(formatter FieldsFormatter) *Logger {
 	return &Logger{
-		level:           l.level,
-		writers:         l.writers,
-		prefixes:        l.prefixes,
-		errorHandler:    l.errorHandler,
-		concurrency:     l.concurrency,
-		fields:          l.fields.Copy(),
-		fieldsFormatter: formatter,
+		level:             l.level,
+		writers:           l.writers,
+		prefixes:          l.prefixes,
+		errorHandler:      l.errorHandler,
+		concurrency:       l.concurrency,
+		fields:            l.fields.Copy(),
+		fieldsFormatter:   formatter,
+		conditions:        l.conditions,
+		levelConditions:   l.levelConditions,
+		contextConditions: l.contextConditions,
 	}
 }
 
@@ -520,4 +547,124 @@ func (l *Logger) write(message string) {
 			l.errorHandler.Handle(err)
 		}
 	}
+}
+
+// When returns a new Logger instance that only logs when the condition is true.
+// This is the main method for applying conditional logging.
+//
+// Parameters:
+//
+//	condition: The condition that determines whether logging should occur.
+//
+// Example:
+//
+//	logger.When(InDevelopment).Debug("This only logs in development")
+func (l *Logger) When(condition Condition) *Logger {
+	conditions := make([]Condition, len(l.conditions))
+	copy(conditions, l.conditions)
+	conditions = append(conditions, condition)
+
+	return &Logger{
+		level:             l.level,
+		writers:           l.writers,
+		prefixes:          l.prefixes,
+		errorHandler:      l.errorHandler,
+		concurrency:       l.concurrency,
+		fields:            l.fields.Copy(),
+		fieldsFormatter:   l.fieldsFormatter,
+		conditions:        conditions,
+		levelConditions:   l.levelConditions,
+		contextConditions: l.contextConditions,
+	}
+}
+
+// WithLevelCondition returns a new Logger instance with a level-based condition.
+// The condition receives the log level and fields for evaluation.
+//
+// Parameters:
+//
+//	condition: The level condition that determines whether logging should occur.
+//
+// Example:
+//
+//	logger.WithLevelCondition(OnlyLevel(ErrorLevel)).Error("Only error level")
+func (l *Logger) WithLevelCondition(condition LevelCondition) *Logger {
+	levelConditions := make([]LevelCondition, len(l.levelConditions))
+	copy(levelConditions, l.levelConditions)
+	levelConditions = append(levelConditions, condition)
+
+	return &Logger{
+		level:             l.level,
+		writers:           l.writers,
+		prefixes:          l.prefixes,
+		errorHandler:      l.errorHandler,
+		concurrency:       l.concurrency,
+		fields:            l.fields.Copy(),
+		fieldsFormatter:   l.fieldsFormatter,
+		conditions:        l.conditions,
+		levelConditions:   levelConditions,
+		contextConditions: l.contextConditions,
+	}
+}
+
+// WithContextCondition returns a new Logger instance with a context-based condition.
+// The condition receives the context for evaluation.
+//
+// Parameters:
+//
+//	condition: The context condition that determines whether logging should occur.
+//
+// Example:
+//
+//	logger.WithContextCondition(HasContextValue("user_id")).Info("User action")
+func (l *Logger) WithContextCondition(condition ContextCondition) *Logger {
+	contextConditions := make([]ContextCondition, len(l.contextConditions))
+	copy(contextConditions, l.contextConditions)
+	contextConditions = append(contextConditions, condition)
+
+	return &Logger{
+		level:             l.level,
+		writers:           l.writers,
+		prefixes:          l.prefixes,
+		errorHandler:      l.errorHandler,
+		concurrency:       l.concurrency,
+		fields:            l.fields.Copy(),
+		fieldsFormatter:   l.fieldsFormatter,
+		conditions:        l.conditions,
+		levelConditions:   l.levelConditions,
+		contextConditions: contextConditions,
+	}
+}
+
+// shouldLog checks if logging should occur based on level and all conditions.
+// This method evaluates the log level and all attached conditions.
+func (l *Logger) shouldLog(level LogLevel) bool {
+	if !level.IsEnabled(l.level) {
+		return false
+	}
+
+	// Check simple conditions
+	for _, condition := range l.conditions {
+		if !condition() {
+			return false
+		}
+	}
+
+	// Check level-based conditions
+	for _, condition := range l.levelConditions {
+		if !condition(level, l.fields) {
+			return false
+		}
+	}
+
+	// Check context-based conditions
+	// Note: For now we use context.Background(), but this could be enhanced
+	// to support goroutine-local context or method-specific context
+	for _, condition := range l.contextConditions {
+		if !condition(context.Background()) {
+			return false
+		}
+	}
+
+	return true
 }
